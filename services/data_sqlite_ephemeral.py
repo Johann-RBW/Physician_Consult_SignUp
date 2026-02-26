@@ -262,3 +262,10 @@ def upsert_facilitator(email: str, display_name: str | None = None) -> None:
 def is_facilitator(email: str) -> bool:
     r = _one("SELECT 1 AS x FROM facilitators WHERE email = ?;", (email.lower(),))
     return bool(r)
+def list_facilitators() -> List[Dict[str, str]]:
+    rows = _query("SELECT email, COALESCE(display_name, '') AS display_name FROM facilitators ORDER BY email;")
+    return [{"email": r["email"], "display_name": r["display_name"]} for r in rows]
+
+
+def remove_facilitator(email: str) -> None:
+    _exec("DELETE FROM facilitators WHERE email = ?;", (email.lower(),))
