@@ -290,16 +290,6 @@ def list_sessions_by_facilitator(facilitator_email: str) -> List[Dict[str, Any]]
 def delete_session(session_id: str) -> None:
     _exec("DELETE FROM sessions WHERE id = ?;", (session_id,))
 
-def upsert_facilitator(email: str, display_name: str | None = None) -> None:
-    _exec(
-        """
-        INSERT INTO facilitators(email, display_name)
-        VALUES(?, ?)
-        ON CONFLICT(email) DO UPDATE SET display_name = excluded.display_name;
-        """,
-        (email.lower(), display_name),
-    )
-
 def _ensure_facilitators_table() -> None:
     _exec(
         """
@@ -309,6 +299,7 @@ def _ensure_facilitators_table() -> None:
         );
         """
     )
+
 def is_facilitator(email: str) -> bool:
     _ensure_facilitators_table()
     r = _one("SELECT 1 AS x FROM facilitators WHERE email = ?;", (email.lower(),))
@@ -332,4 +323,4 @@ def list_facilitators() -> list[dict[str, str]]:
 
 def remove_facilitator(email: str) -> None:
     _ensure_facilitators_table()
-    _exec("DELETE FROM facilitators WHERE email = ?;", (email.lower(),))
+    _exec("DELETE FROM facilitators WHERE email = ?;", (em
