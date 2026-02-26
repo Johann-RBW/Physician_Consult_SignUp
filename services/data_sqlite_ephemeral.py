@@ -80,6 +80,10 @@ def _ensure_schema() -> None:
             ParticipantName TEXT,
             Status TEXT NOT NULL DEFAULT 'Pending',  -- Pending | Confirmed | Removed | Rejected
             CalendarEventId TEXT,
+            -- New claim fields (may be absent on older DBs; we'll add via ALTER below)
+            ClaimNumber TEXT,
+            ClaimType TEXT,
+            ClaimQuestion TEXT,
             CreatedAt TEXT DEFAULT (datetime('now')),
             UNIQUE(SessionId, ParticipantEmail)
         );
@@ -94,7 +98,16 @@ def _ensure_schema() -> None:
         """
     )
 
-_ensure_schema()
+    # --- Backfill columns if DB was created earlier (safe no-ops if already exist) ---
+    for col, ddl in [
+        ("ClaimNumber",  "ALTER TABLE signups ADD COLUMN ClaimNumber TEXT"),
+        ("ClaimType",    "ALTER TABLE signups ADD COLUMN ClaimType TEXT"),
+        ("ClaimQuestion","ALTER TABLE signups ADD COLUMN ClaimQuestion TEXT"),
+    ]:
+        try:
+            _exec(ddl)
+        except Exception:
+            pass
 
 
 # ---------- Helpers ----------
@@ -122,8 +135,10 @@ def _row_to_signup(r: sqlite3.Row) -> Dict[str, Any]:
         "ParticipantName": r["ParticipantName"] or (r["ParticipantEmail"].split("@")[0] if r["ParticipantEmail"] else ""),
         "Status": r["Status"],
         "CalendarEventId": r["CalendarEventId"] or "",
+        "ClaimNumber": r["ClaimNumber"] or "",
+        "ClaimType": r["ClaimType"] or "",
+        "ClaimQuestion": r["ClaimQuestion"] or "",
     }
-
 
 # ---------- Public API (matches your in-memory signatures) ----------
 
@@ -167,7 +182,14 @@ def count_confirmed(session_id: str) -> int:
     return int(r["c"] if r else 0)
 
 
-def create_signup(session_id: str, participant_email: str, participant_name: str) -> Dict[str, Any]:
+def create_signup(
+    session_id: str,
+    participant_email: str,
+    participant_name: str,
+    claim_number: str,
+    claim_type: str,
+    claim_question: str,
+) -> Dict[str, Any]:
     # Ensure session exists
     if not _one("SELECT 1 FROM sessions WHERE id = ?;", (session_id,)):
         raise KeyError(f"Session not found: {session_id}")
@@ -176,10 +198,21 @@ def create_signup(session_id: str, participant_email: str, participant_name: str
     try:
         _exec(
             """
-            INSERT INTO signups (id, SessionId, ParticipantEmail, ParticipantName, Status, CalendarEventId)
-            VALUES (?, ?, ?, ?, 'Pending', '');
+            INSERT INTO signups (
+                id, SessionId, ParticipantEmail, ParticipantName, Status, CalendarEventId,
+                ClaimNumber, ClaimType, ClaimQuestion
+            )
+            VALUES (?, ?, ?, ?, 'Pending', '', ?, ?, ?);
             """,
-            (signup_id, session_id, participant_email.lower(), participant_name),
+            (
+                signup_id,
+                session_id,
+                participant_email.lower(),
+                participant_name,
+                claim_number.strip(),
+                claim_type.strip(),
+                claim_question.strip(),
+            ),
         )
     except sqlite3.IntegrityError as ex:
         # Likely UNIQUE(SessionId, ParticipantEmail)
