@@ -80,7 +80,7 @@ def _ensure_schema() -> None:
             ParticipantName TEXT,
             Status TEXT NOT NULL DEFAULT 'Pending',  -- Pending | Confirmed | Removed | Rejected
             CalendarEventId TEXT,
-            -- New claim fields (may be absent on older DBs; we'll add via ALTER below)
+            -- Claim fields (may be missing on older DBs; we add them below via ALTER)
             ClaimNumber TEXT,
             ClaimType TEXT,
             ClaimQuestion TEXT,
@@ -98,15 +98,16 @@ def _ensure_schema() -> None:
         """
     )
 
-    # --- Backfill columns if DB was created earlier (safe no-ops if already exist) ---
-    for col, ddl in [
-        ("ClaimNumber",  "ALTER TABLE signups ADD COLUMN ClaimNumber TEXT"),
-        ("ClaimType",    "ALTER TABLE signups ADD COLUMN ClaimType TEXT"),
-        ("ClaimQuestion","ALTER TABLE signups ADD COLUMN ClaimQuestion TEXT"),
-    ]:
+    # ---- Backfill columns if DB was created earlier (safe no-ops if they already exist) ----
+    for ddl in (
+        "ALTER TABLE signups ADD COLUMN ClaimNumber TEXT",
+        "ALTER TABLE signups ADD COLUMN ClaimType TEXT",
+        "ALTER TABLE signups ADD COLUMN ClaimQuestion TEXT",
+    ):
         try:
             _exec(ddl)
         except Exception:
+            # Column already exists -> ignore
             pass
 
 
