@@ -300,14 +300,36 @@ def upsert_facilitator(email: str, display_name: str | None = None) -> None:
         (email.lower(), display_name),
     )
 
-
+def _ensure_facilitators_table() -> None:
+    _exec(
+        """
+        CREATE TABLE IF NOT EXISTS facilitators (
+            email TEXT PRIMARY KEY,
+            display_name TEXT
+        );
+        """
+    )
 def is_facilitator(email: str) -> bool:
+    _ensure_facilitators_table()
     r = _one("SELECT 1 AS x FROM facilitators WHERE email = ?;", (email.lower(),))
     return bool(r)
-def list_facilitators() -> List[Dict[str, str]]:
+
+def upsert_facilitator(email: str, display_name: str | None = None) -> None:
+    _ensure_facilitators_table()
+    _exec(
+        """
+        INSERT INTO facilitators(email, display_name)
+        VALUES(?, ?)
+        ON CONFLICT(email) DO UPDATE SET display_name = excluded.display_name;
+        """,
+        (email.lower(), display_name),
+    )
+
+def list_facilitators() -> list[dict[str, str]]:
+    _ensure_facilitators_table()
     rows = _query("SELECT email, COALESCE(display_name, '') AS display_name FROM facilitators ORDER BY email;")
     return [{"email": r["email"], "display_name": r["display_name"]} for r in rows]
 
-
 def remove_facilitator(email: str) -> None:
+    _ensure_facilitators_table()
     _exec("DELETE FROM facilitators WHERE email = ?;", (email.lower(),))
