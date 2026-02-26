@@ -2,8 +2,8 @@
 import streamlit as st
 from utils.ui import page_header, status_badge
 
-# ---- Use SharePoint data layer ----
-from services.data_sharepoint import (
+# ---- Use ephemeral SQLite data layer ----
+from services.data_sqlite_ephemeral import (
     list_sessions,
     list_signups_for_session,
     list_signups_for_user,
