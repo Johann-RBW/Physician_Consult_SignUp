@@ -1,14 +1,17 @@
 # app.py
 import streamlit as st
 from utils.ui import page_header, status_badge
-from services.data_memory import (
-    init_demo_data, list_sessions, list_signups_for_session,
-    list_signups_for_user, count_confirmed, create_signup,
-    update_signup_status, get_session
-)
 
-# --- Init demo data (in-memory) ---
-init_demo_data()
+# ---- Use SharePoint data layer ----
+from services.data_sharepoint import (
+    list_sessions,
+    list_signups_for_session,
+    list_signups_for_user,
+    count_confirmed,
+    create_signup,
+    update_signup_status,
+    get_session,
+)
 
 # --- Identify the current user (works in Streamlit Cloud) ---
 # If you're running locally, you can fallback to a manual input
@@ -33,8 +36,12 @@ if view == "Participant":
     page_header("Sessions", "Sign up for a session")
 
     sessions = list_sessions(active_only=True)
-    session_titles = {f"{s['Title']} — {s['StartDateTime'][:16].replace('T',' ')}": s["ID"] for s in sessions}
-    selected_label = st.selectbox("Select a session", list(session_titles.keys()) if session_titles else ["No sessions"])
+    session_titles = {
+        f"{s['Title']} — {s['StartDateTime'][:16].replace('T',' ')}": s["ID"] for s in sessions
+    }
+    selected_label = st.selectbox(
+        "Select a session", list(session_titles.keys()) if session_titles else ["No sessions"]
+    )
     if session_titles:
         session_id = session_titles[selected_label]
         sess = get_session(session_id)
@@ -96,7 +103,7 @@ if view == "Facilitator":
                     status_badge(r["Status"])
                 with c3:
                     if r["Status"] == "Pending" and st.button("Approve", key=f"approve_{r['ID']}"):
-                        # Capacity check
+                        # Capacity check (fixed: use >=)
                         if count_confirmed(session_id) >= sess["Capacity"]:
                             st.warning("Capacity reached. Cannot confirm more participants.")
                         else:
