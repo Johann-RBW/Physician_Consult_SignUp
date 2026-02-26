@@ -110,7 +110,6 @@ def _ensure_schema() -> None:
             # Column already exists -> ignore
             pass
 
-
 # ---------- Helpers ----------
 
 def _row_to_session(r: sqlite3.Row) -> Dict[str, Any]:
