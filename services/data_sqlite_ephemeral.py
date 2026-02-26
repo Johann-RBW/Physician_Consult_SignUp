@@ -246,7 +246,16 @@ def update_session(
     sql = f"UPDATE sessions SET {', '.join(sets)} WHERE id = ?;"
     _exec(sql, tuple(vals))
     return get_session(session_id)
+def list_sessions_by_facilitator(facilitator_email: str) -> List[Dict[str, Any]]:
+    rows = _query(
+        "SELECT * FROM sessions WHERE FacilitatorEmail = ? ORDER BY StartDateTime ASC;",
+        (facilitator_email.lower(),),
+    )
+    return [_row_to_session(r) for r in rows]
 
+
+def delete_session(session_id: str) -> None:
+    _exec("DELETE FROM sessions WHERE id = ?;", (session_id,))
 
 def upsert_facilitator(email: str, display_name: str | None = None) -> None:
     _exec(

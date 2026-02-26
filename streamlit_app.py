@@ -15,6 +15,8 @@ from services.data_sqlite_ephemeral import (
     upsert_facilitator,
     list_facilitators,
     remove_facilitator,
+    list_sessions_by_facilitator,
+    delete_session,
 )
 
 # --- Identify the current user (works in Streamlit Cloud) ---
@@ -92,7 +94,139 @@ if view == "Participant":
 # --- Facilitator View ---
 if view == "Facilitator":
     page_header("Facilitator Dashboard", "Review and manage signups for your sessions")
+# ---------- Create / Edit Sessions ----------
+    st.subheader("Create / Edit Sessions")
 
+    import datetime as dt
+
+    def _combine_iso(date_val, time_val):
+        # Store UTC-ish ISO strings for now; adjust later if you add timezone handling
+        dt_obj = dt.datetime.combine(date_val, time_val).replace(microsecond=0)
+        return dt_obj.isoformat()
+
+    with st.expander("Create a new session", expanded=False):
+        c1, c2 = st.columns(2)
+        with c1:
+            new_title = st.text_input("Title", placeholder="e.g., Coaching Circle - Q2")
+            new_type = st.text_input("SessionType", placeholder="Workshop / Coaching / Roundtable")
+            new_capacity = st.number_input("Capacity", min_value=0, step=1, value=10)
+            new_active = st.checkbox("Active", value=True)
+        with c2:
+            today = dt.date.today()
+            start_date = st.date_input("Start date", value=today)
+            start_time = st.time_input("Start time", value=dt.time(9, 0))
+            end_date = st.date_input("End date", value=today)
+            end_time = st.time_input("End time", value=dt.time(10, 0))
+            new_teams = st.text_input("TeamsJoinUrl (optional)", placeholder="https://teams.microsoft.com/...")
+        if st.button("Create session", type="primary"):
+            if not new_title.strip():
+                st.warning("Please enter a session Title.")
+            else:
+                start_iso = _combine_iso(start_date, start_time)
+                end_iso = _combine_iso(end_date, end_time)
+                if end_iso <= start_iso:
+                    st.error("End must be after Start.")
+                else:
+                    from services.data_sqlite_ephemeral import create_session
+                    s = create_session(
+                        title=new_title.strip(),
+                        session_type=new_type.strip(),
+                        facilitator_email=user_email,
+                        start_iso=start_iso,
+                        end_iso=end_iso,
+                        capacity=int(new_capacity),
+                        active=bool(new_active),
+                        teams_url=new_teams.strip(),
+                    )
+                    st.success(f"Created: {s['Title']} (ID: {s['ID'][:8]})")
+                    st.rerun()
+
+    st.divider()
+    st.subheader("Your Sessions")
+
+    my_sessions_all = list_sessions_by_facilitator(user_email)
+    if not my_sessions_all:
+        st.info("You haven't created any sessions yet.")
+    else:
+        # Pick one to edit
+        label_map = {
+            f"{s['Title']} — {s['StartDateTime'][:16].replace('T',' ')}": s["ID"]
+            for s in my_sessions_all
+        }
+        pick_edit_label = st.selectbox("Select a session to edit", list(label_map.keys()))
+        edit_session_id = label_map[pick_edit_label]
+        sess_edit = get_session(edit_session_id)
+
+        ec1, ec2 = st.columns(2)
+        with ec1:
+            e_title = st.text_input("Title (edit)", value=sess_edit["Title"])
+            e_type = st.text_input("SessionType (edit)", value=sess_edit.get("SessionType", ""))
+            e_capacity = st.number_input("Capacity (edit)", min_value=0, step=1, value=int(sess_edit["Capacity"]))
+            e_active = st.checkbox("Active (edit)", value=bool(sess_edit["Active"]))
+        with ec2:
+            # Parse ISO strings to date/time widgets
+            def _parse_iso(iso_str: str) -> tuple[dt.date, dt.time]:
+                try:
+                    d = dt.datetime.fromisoformat(iso_str)
+                except Exception:
+                    d = dt.datetime.utcnow().replace(minute=0, second=0, microsecond=0)
+                return d.date(), d.time()
+
+            sd, stime = _parse_iso(sess_edit["StartDateTime"])
+            ed, etime = _parse_iso(sess_edit["EndDateTime"])
+
+            e_start_date = st.date_input("Start date (edit)", value=sd, key="e_sd")
+            e_start_time = st.time_input("Start time (edit)", value=stime, key="e_st")
+            e_end_date   = st.date_input("End date (edit)", value=ed, key="e_ed")
+            e_end_time   = st.time_input("End time (edit)", value=etime, key="e_et")
+
+            e_teams = st.text_input("TeamsJoinUrl (edit)", value=sess_edit.get("TeamsJoinUrl", ""))
+
+        cc1, cc2, cc3 = st.columns([2,2,2])
+        with cc1:
+            if st.button("Save changes", key="btn_save_session", type="primary"):
+                e_start_iso = _combine_iso(e_start_date, e_start_time)
+                e_end_iso   = _combine_iso(e_end_date, e_end_time)
+                if e_end_iso <= e_start_iso:
+                    st.error("End must be after Start.")
+                else:
+                    from services.data_sqlite_ephemeral import update_session
+                    update_session(
+                        edit_session_id,
+                        Title=e_title.strip(),
+                        SessionType=e_type.strip(),
+                        FacilitatorEmail=user_email,  # keep ownership
+                        StartDateTime=e_start_iso,
+                        EndDateTime=e_end_iso,
+                        Capacity=int(e_capacity),
+                        Active=1 if e_active else 0,
+                        TeamsJoinUrl=e_teams.strip(),
+                    )
+                    st.success("Session updated.")
+                    st.rerun()
+        with cc2:
+            if st.button("Duplicate as new", key="btn_dup_session"):
+                from services.data_sqlite_ephemeral import create_session
+                dup = create_session(
+                    title=f"{e_title.strip()} (copy)",
+                    session_type=e_type.strip(),
+                    facilitator_email=user_email,
+                    start_iso=_combine_iso(e_start_date, e_start_time),
+                    end_iso=_combine_iso(e_end_date, e_end_time),
+                    capacity=int(e_capacity),
+                    active=bool(e_active),
+                    teams_url=e_teams.strip(),
+                )
+                st.success(f"Duplicated: {dup['Title']} (ID: {dup['ID'][:8]})")
+                st.rerun()
+        with cc3:
+            del_confirm = st.checkbox("Confirm delete", key="chk_del")
+            if st.button("Delete session", key="btn_del_session", type="secondary", disabled=not del_confirm):
+                delete_session(edit_session_id)
+                st.warning("Session deleted.")
+                st.rerun()
+
+    st.divider()
     # Sessions where current user is the facilitator
     my_sessions = [s for s in list_sessions() if s["FacilitatorEmail"].lower() == (user_email or "").lower()]
     if not my_sessions:
